@@ -1,11 +1,14 @@
 'use client'
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useLayoutEffect } from 'react'
 import SearchForm from '../components/SearchForm'
 import KakaoMap from '@/app/global/components/KakaoMap'
 import RestaurantItems from '../components/RestaurantItems'
 import CategoryTabs from '../components/CategoryTabs'
+import { getList } from '../services/actions'
+import { List } from 'react-content-loader'
 
 type SearchType = {
+  mode: 'current' | 'search'
   sido?: string
   sigugun?: string
   category?: string[]
@@ -15,14 +18,49 @@ type SearchType = {
   limit?: number
 }
 
-const RestaurantContainer = () => {
-  const [search, setSearch] = useState<SearchType>()
-  const [categories, setCategories] = useState<string[]>([])
+const Loading = () => <List />
 
-  useEffect(() => {}, [categories]) // 분류가 변경될 때 마다 바로바로 조회 내용 반영
+const RestaurantContainer = () => {
+  const [search, setSearch] = useState<SearchType>({ mode: 'current' })
+  const [_search, _setSearch] = useState<SearchType>({ mode: 'current' })
+  const [categories, setCategories] = useState<string[]>([])
+  const [items, setItems] = useState<any>([])
+  const [loading, setLoading] = useState<boolean>(false)
+
+  useEffect(() => {
+    ;(async () => {
+      setLoading(true)
+      const _items = await getList(search)
+      setItems(_items)
+      setLoading(false)
+    })()
+  }, [search])
+
+  useEffect(() => {
+    setSearch((search) => ({ ...search, category: categories }))
+  }, [categories]) // 분류가 변경될때 마다 바로바로 조회 내용 반영
+
+  useEffect(() => {
+    const { mode, limit, lat, lon } = search
+    if (mode === 'current' && !lat && !lon) {
+      // 위치 기반일 때 현재 사용자의 위도, 경도 좌표 조회
+      navigator.geolocation.getCurrentPosition((pos) => {
+        setSearch((search) => ({
+          ...search,
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+          limit: limit < 1 ? 50 : limit,
+        }))
+      })
+    }
+  }, [search])
 
   const onChange = useCallback((e) => {
-    setSearch((search) => ({ ...search, [e.target.name]: [e.target.value] }))
+    _setSearch((search) => ({ ...search, [e.target.name]: [e.target.value] }))
+  }, [])
+
+  const onClick = useCallback((field, value) => {
+    _setSearch((search) => ({ ...search, [field]: value }))
   }, [])
 
   const onTabClick = useCallback((category) => {
@@ -38,16 +76,31 @@ const RestaurantContainer = () => {
     })
   }, [])
 
-  const onSubmit = useCallback((e) => {
-    e.preventDefault()
-  }, [])
+  const onSubmit = useCallback(
+    (e) => {
+      e.preventDefault()
+      setSearch(_search)
+    },
+    [_search],
+  )
+
+  const onMoveToLocation = useCallback((lat, lon) => {}, [])
 
   return (
     <>
       <CategoryTabs categories={categories} onClick={onTabClick} />
-      <SearchForm form={search} onChange={onChange} onSubmit={onSubmit} />
+      <SearchForm
+        form={_search}
+        onChange={onChange}
+        onSubmit={onSubmit}
+        onClick={onClick}
+      />
       <KakaoMap />
-      <RestaurantItems />
+      {loading ? (
+        <Loading />
+      ) : (
+        <RestaurantItems items={items} onClick={onMoveToLocation} />
+      )}
     </>
   )
 }
